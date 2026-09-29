@@ -53,6 +53,8 @@ Administrators and managers can:
 * Leave History
 * Leave Tracking
 * Leave Status
+<img width="1920" height="877" alt="image" src="https://github.com/user-attachments/assets/d726e479-a0a6-40f2-9cb9-51ce7c17d0df" />
+<img width="1920" height="1663" alt="image" src="https://github.com/user-attachments/assets/5daf37e1-92de-43e6-af0b-f8c654a7080a" />
 
 ### Admin / Manager Portal
 
@@ -64,6 +66,7 @@ Administrators and managers can:
 * Leave Rejection
 * Approval Workflow
 * Employee Leave Tracking
+<img width="1920" height="1360" alt="image" src="https://github.com/user-attachments/assets/355ce682-73ea-4ea0-976d-df84d7ca0b43" />
 
 ### Leave Types
 
