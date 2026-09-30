@@ -271,7 +271,7 @@ pipeline {
 
                     MYSQL_STATUS=$(docker inspect \
                         --format='{{.State.Health.Status}}' \
-                        employee-mysql)
+                        leave-mysql)
 
 
                     echo "MySQL status: ${MYSQL_STATUS}"
@@ -290,7 +290,7 @@ pipeline {
 
                     BACKEND_STATUS=$(docker inspect \
                         --format='{{.State.Health.Status}}' \
-                        employee-backend)
+                        leave-backend)
 
 
                     echo "Backend status: ${BACKEND_STATUS}"
