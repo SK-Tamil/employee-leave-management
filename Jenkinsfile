@@ -328,7 +328,7 @@ pipeline {
                     curl --fail \
                         --retry 5 \
                         --retry-delay 5 \
-                        http://localhost:5000/health
+                        http://localhost:5000/api/health
 
 
                     echo ""
