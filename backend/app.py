@@ -70,7 +70,7 @@ def home():
 # HEALTH CHECK
 # =====================================================
 
-@app.route("/health")
+@app.route("/api/health")
 def health():
 
     return jsonify({
