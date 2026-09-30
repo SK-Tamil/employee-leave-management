@@ -28,7 +28,8 @@ services:
           "localhost",
           "-u",
           "root",
-          "-prootpassword"
+          "-prootpassword",
+           "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health')"
         ]
       interval: 10s
       timeout: 5s
