@@ -4,15 +4,16 @@ pipeline {
 
     environment {
 
-        PROJECT_NAME = 'employee-management'
-
         FRONTEND_IMAGE = 'employee-frontend'
         BACKEND_IMAGE  = 'employee-backend'
 
         COMPOSE_FILE = 'docker-compose.yml'
 
         TRIVY_SEVERITY = 'HIGH,CRITICAL'
+
+        PREVIOUS_TAG_FILE = '.previous_build'
     }
+
 
     stages {
 
@@ -50,22 +51,16 @@ pipeline {
                 sh '''
                     set -e
 
-                    echo "Installing frontend dependencies..."
-
                     cd frontend
-
                     npm ci
 
                     cd ..
-
-                    echo "Installing backend dependencies..."
 
                     python3 -m venv .ci-venv
 
                     . .ci-venv/bin/activate
 
                     pip install --upgrade pip
-
                     pip install -r backend/requirements.txt
                 '''
             }
@@ -87,16 +82,10 @@ pipeline {
                     echo "Running backend tests..."
 
                     if [ -d "backend/tests" ]; then
-
                         . .ci-venv/bin/activate
-
                         pytest backend/tests -v
-
                     else
-
-                        echo "No backend tests directory found."
-                        echo "Skipping backend tests."
-
+                        echo "No backend tests found. Skipping."
                     fi
 
 
@@ -105,14 +94,9 @@ pipeline {
                     cd frontend
 
                     if grep -q '"test"' package.json; then
-
                         npm test -- --run
-
                     else
-
-                        echo "No frontend test script found."
-                        echo "Skipping frontend tests."
-
+                        echo "No frontend test script found. Skipping."
                     fi
                 '''
             }
@@ -120,7 +104,7 @@ pipeline {
 
 
         // ==========================================
-        // 4. BUILD DOCKER IMAGES
+        // 4. DOCKER BUILD
         // ==========================================
 
         stage('Docker Build') {
@@ -131,23 +115,17 @@ pipeline {
                 sh '''
                     set -e
 
-                    echo "Building frontend image..."
-
                     docker build \
                         -t ${FRONTEND_IMAGE}:${BUILD_NUMBER} \
                         -t ${FRONTEND_IMAGE}:latest \
                         ./frontend
-
-
-                    echo "Building backend image..."
 
                     docker build \
                         -t ${BACKEND_IMAGE}:${BUILD_NUMBER} \
                         -t ${BACKEND_IMAGE}:latest \
                         ./backend
 
-
-                    echo "Docker images created:"
+                    echo "Images created:"
 
                     docker images | grep -E \
                         "${FRONTEND_IMAGE}|${BACKEND_IMAGE}"
@@ -171,66 +149,107 @@ pipeline {
                     mkdir -p reports
 
 
-                    echo "Scanning frontend image..."
+                    echo "===== FRONTEND TRIVY REPORT =====" \
+                        > reports/frontend-trivy.txt
 
                     trivy image \
                         --severity ${TRIVY_SEVERITY} \
                         --format table \
-                        --output reports/frontend-trivy.txt \
-                        ${FRONTEND_IMAGE}:${BUILD_NUMBER}
+                        ${FRONTEND_IMAGE}:${BUILD_NUMBER} \
+                        >> reports/frontend-trivy.txt
 
 
-                    echo "Scanning backend image..."
+                    echo "===== BACKEND TRIVY REPORT =====" \
+                        > reports/backend-trivy.txt
 
                     trivy image \
                         --severity ${TRIVY_SEVERITY} \
                         --format table \
-                        --output reports/backend-trivy.txt \
-                        ${BACKEND_IMAGE}:${BUILD_NUMBER}
+                        ${BACKEND_IMAGE}:${BUILD_NUMBER} \
+                        >> reports/backend-trivy.txt
 
 
-                    echo "Frontend Trivy report:"
+                    echo "Frontend report:"
                     cat reports/frontend-trivy.txt
 
 
-                    echo "Backend Trivy report:"
+                    echo "Backend report:"
                     cat reports/backend-trivy.txt
                 '''
             }
 
             post {
                 always {
-
-                    archiveArtifacts artifacts:
-                        'reports/*.txt',
-                        allowEmptyArchive: true
+                    archiveArtifacts artifacts: 'reports/*.txt',
+                                     allowEmptyArchive: true
                 }
             }
         }
 
 
         // ==========================================
-        // 6. DEPLOY WITH DOCKER COMPOSE
+        // 6. SAVE PREVIOUS VERSION
+        // ==========================================
+
+        stage('Save Previous Version') {
+            steps {
+
+                echo 'Checking current deployed version...'
+
+                sh '''
+                    set +e
+
+                    CURRENT_TAG=$(docker inspect \
+                        leave-backend \
+                        --format='{{.Config.Image}}' \
+                        2>/dev/null)
+
+                    if [ -n "$CURRENT_TAG" ]; then
+
+                        echo "Current backend image: $CURRENT_TAG"
+
+                        PREVIOUS_TAG=$(echo "$CURRENT_TAG" | cut -d: -f2)
+
+                        echo "$PREVIOUS_TAG" > ${PREVIOUS_TAG_FILE}
+
+                        echo "Previous version: $PREVIOUS_TAG"
+
+                    else
+
+                        echo "No previous deployment found."
+
+                        rm -f ${PREVIOUS_TAG_FILE}
+                    fi
+                '''
+            }
+        }
+
+
+        // ==========================================
+        // 7. DEPLOY
         // ==========================================
 
         stage('Docker Compose Deploy') {
             steps {
 
-                echo 'Deploying application using Docker Compose...'
+                echo 'Deploying application...'
 
                 sh '''
                     set -e
 
-                    echo "Stopping old application containers..."
-
-                    docker compose -f ${COMPOSE_FILE} down
-
-
-                    echo "Starting new application..."
+                    echo "Stopping old application..."
 
                     docker compose \
                         -f ${COMPOSE_FILE} \
-                        up -d --build
+                        down
+
+
+                    echo "Deploying version: ${BUILD_NUMBER}"
+
+                    IMAGE_TAG=${BUILD_NUMBER} \
+                    docker compose \
+                        -f ${COMPOSE_FILE} \
+                        up -d
 
 
                     echo "Current containers:"
@@ -244,64 +263,39 @@ pipeline {
 
 
         // ==========================================
-        // 7. HEALTH CHECK
+        // 8. HEALTH CHECK
         // ==========================================
 
         stage('Health Check') {
             steps {
 
-                echo 'Waiting for services to become healthy...'
+                echo 'Checking application health...'
 
                 sh '''
                     set -e
 
-                    echo "Waiting for containers..."
-
                     sleep 20
 
-
-                    echo "Docker Compose status:"
-
-                    docker compose \
-                        -f ${COMPOSE_FILE} \
-                        ps
-
-
-                    echo "Checking MySQL..."
 
                     MYSQL_STATUS=$(docker inspect \
                         --format='{{.State.Health.Status}}' \
                         leave-mysql)
-
-
-                    echo "MySQL status: ${MYSQL_STATUS}"
-
-
-                    if [ "$MYSQL_STATUS" != "healthy" ]; then
-
-                        echo "MySQL health check failed."
-
-                        exit 1
-
-                    fi
-
-
-                    echo "Checking backend..."
 
                     BACKEND_STATUS=$(docker inspect \
                         --format='{{.State.Health.Status}}' \
                         leave-backend)
 
 
-                    echo "Backend status: ${BACKEND_STATUS}"
+                    echo "MySQL   : ${MYSQL_STATUS}"
+                    echo "Backend : ${BACKEND_STATUS}"
 
 
-                    if [ "$BACKEND_STATUS" != "healthy" ]; then
+                    if [ "$MYSQL_STATUS" != "healthy" ] || \
+                       [ "$BACKEND_STATUS" != "healthy" ]; then
 
-                        echo "Backend health check failed."
+                        echo "Health check failed."
 
                         exit 1
-
                     fi
 
 
@@ -312,7 +306,7 @@ pipeline {
 
 
         // ==========================================
-        // 8. DEPLOYMENT VERIFICATION
+        // 9. DEPLOYMENT VERIFICATION
         // ==========================================
 
         stage('Deployment Verification') {
@@ -323,13 +317,10 @@ pipeline {
                 sh '''
                     set -e
 
-                    echo "Testing backend health endpoint..."
-
                     curl --fail \
                         --retry 5 \
                         --retry-delay 5 \
                         http://localhost:5000/api/health
-
 
                     echo ""
 
@@ -340,7 +331,7 @@ pipeline {
 
 
         // ==========================================
-        // 9. CLEANUP
+        // 10. CLEANUP
         // ==========================================
 
         stage('Docker Cleanup') {
@@ -349,19 +340,11 @@ pipeline {
                 echo 'Cleaning unused Docker resources...'
 
                 sh '''
-                    echo "Removing dangling images..."
-
                     docker image prune -f
-
-
-                    echo "Removing unused build cache..."
 
                     docker builder prune -f
 
-
-                    echo "Cleanup completed."
-
-                    docker images
+                    echo "Docker cleanup completed."
                 '''
             }
         }
@@ -376,10 +359,11 @@ pipeline {
 
         success {
 
-            echo '''
+            echo """
 ========================================
-   CI/CD PIPELINE SUCCESSFUL
+       CI/CD PIPELINE SUCCESSFUL
 ========================================
+
 Application deployed successfully.
 
 Build Number:
@@ -390,26 +374,61 @@ ${FRONTEND_IMAGE}:${BUILD_NUMBER}
 
 Backend:
 ${BACKEND_IMAGE}:${BUILD_NUMBER}
+
 ========================================
-'''
+"""
         }
 
 
         failure {
 
-            echo '''
+            echo """
 ========================================
-   CI/CD PIPELINE FAILED
+        PIPELINE FAILED
 ========================================
 
-Deployment or validation failed.
-
-Rollback process should be executed here.
+Starting rollback...
 ========================================
-'''
+"""
 
-            // Rollback logic will be added
-            // after the basic pipeline is tested.
+            sh '''
+                set +e
+
+                if [ -f "${PREVIOUS_TAG_FILE}" ]; then
+
+                    PREVIOUS_TAG=$(cat ${PREVIOUS_TAG_FILE})
+
+                    echo "Rolling back to version: ${PREVIOUS_TAG}"
+
+
+                    docker compose \
+                        -f ${COMPOSE_FILE} \
+                        down
+
+
+                    IMAGE_TAG=${PREVIOUS_TAG} \
+                    docker compose \
+                        -f ${COMPOSE_FILE} \
+                        up -d
+
+
+                    echo "Rollback completed."
+
+
+                    echo "Rollback containers:"
+
+                    docker compose \
+                        -f ${COMPOSE_FILE} \
+                        ps
+
+                else
+
+                    echo "No previous version available."
+
+                    echo "Rollback skipped."
+
+                fi
+            '''
         }
 
 
