@@ -29,7 +29,6 @@ services:
           "-u",
           "root",
           "-prootpassword"
-           
         ]
       interval: 10s
       timeout: 5s
@@ -48,17 +47,17 @@ services:
       - "5000:5000"
 
     healthcheck:
-  test:
-    [
-      "CMD",
-      "python",
-      "-c",
-      "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health')"
-    ]
-  interval: 10s
-  timeout: 5s
-  retries: 5
-  start_period: 10s
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health')"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
     depends_on:
       mysql:
