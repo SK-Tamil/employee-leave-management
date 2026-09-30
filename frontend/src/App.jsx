@@ -35,7 +35,7 @@ const techNames = [
   "Role Based Access",
   
 ];
-const API_URL = "http://54.160.149.70:5000/api";
+const API_URL = "http://54.226.84.85:5000/api";
 
 function App() {
   const [page, setPage] = useState("login");
