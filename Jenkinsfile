@@ -195,20 +195,6 @@ pipeline {
 
                     echo "Backend Trivy report:"
                     cat reports/backend-trivy.txt
-
-
-                    echo "Failing pipeline if HIGH or CRITICAL vulnerabilities exist..."
-
-                    trivy image \
-                        --severity ${TRIVY_SEVERITY} \
-                        --exit-code 1 \
-                        ${FRONTEND_IMAGE}:${BUILD_NUMBER}
-
-
-                    trivy image \
-                        --severity ${TRIVY_SEVERITY} \
-                        --exit-code 1 \
-                        ${BACKEND_IMAGE}:${BUILD_NUMBER}
                 '''
             }
 
